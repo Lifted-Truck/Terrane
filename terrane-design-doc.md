@@ -183,6 +183,8 @@ TERRANE's entire harmonic-analysis layer is a **Tonality client** (github.com/Li
 
 **Latency analysis:** Tonality's APIs are batch, not incremental — but TERRANE's harmonic events occur at *harmonic rhythm* (seconds), not control rate. Only the particle physics is control-rate, and it is purely local. TERRANE maintains its own decaying pitch-class histogram and calls Tonality per chord event with a snapshot; microsecond table-driven identity answers make per-event batch calls comfortably real-time-adequate for Phase 1. Incremental/streaming APIs would make this cleaner, not possible.
 
+> **Status (2026-06-11):** the relay below happened and Tonality answered — see `integrations/terrane/{brief,response,brief-2}.md` in the Tonality repo. Verdicts: items 1 and 3 (evenness) shipped/documented; VL pairing shipped at identity level (realization level = Tonality gap 6); cadence events = gap 7; streaming = gap 5; TERRANE recorded as target application A5. Build against INTEGRATION.md's documented recipes; pin key-profile version `kk-1982.1`.
+
 **Candidate Tonality roadmap entries to relay to the repo agent (TERRANE as motivating consumer, alongside target app A4):**
 1. *Incremental/streaming session API* — stateful decaying pitch-class histogram with event-driven key induction; the shared prerequisite for all real-time consumers.
 2. *Cadence detection as an evidenced event* — V–I (and related) root-motion detection with per-signal evidence, fitting the plural/ranked/evidenced model; consumed by TERRANE's home-impulse mechanism.
