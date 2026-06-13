@@ -92,7 +92,7 @@ const CONTROL_SPEC = [
 function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
 function connect() {
-  ws = new WebSocket(`ws://${location.hostname}:8765`);
+  ws = new WebSocket(`ws://${location.hostname}:8766`);
   ws.onopen = () => conn.textContent = "WS: live", conn.classList.add("on");
   ws.onclose = () => { conn.textContent = "WS: reconnecting…"; conn.classList.remove("on"); setTimeout(connect, 800); };
   ws.onmessage = (ev) => {

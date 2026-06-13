@@ -18,7 +18,7 @@ from .midi_io import load_midi_events
 from .params import Params
 
 HTTP_PORT = 8800
-WS_PORT = 8765
+WS_PORT = 8766  # 8765 collides with Tonality's tonality-serve.py in this dev environment
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND = os.path.join(ROOT, "frontend")
 FIXTURES = os.path.join(ROOT, "fixtures")
