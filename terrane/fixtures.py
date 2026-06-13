@@ -13,6 +13,11 @@ MAJ = (0, 4, 7)
 MIN = (0, 3, 7)
 DOM7 = (0, 4, 7, 10)
 MIN7 = (0, 3, 7, 10)
+MAJ7 = (0, 4, 7, 11)
+AUG = (0, 4, 8)            # perfectly even → evenness 1.0 (far harmonic end of x)
+QUARTAL = (0, 5, 10)       # stacked fourths, fairly even
+CLUSTER = (0, 1, 2)        # dense → low evenness (far inharmonic end of x)
+CLUSTER4 = (0, 1, 2, 3)
 
 
 def chord(root_pc: int, quality: tuple[int, ...]) -> list[int]:
@@ -99,6 +104,51 @@ def build_all(out_dir: str) -> list[str]:
                               (11, MAJ), (6, MAJ), (1, MAJ), (8, MAJ), (3, MAJ)] + eb_tail
     w("route_a.mid", _seq(route_a, 1.0))
     w("route_b.mid", _seq(route_b, 1.0))
+
+    # --- Demonstration walks (manifold-travel showcases, not acceptance tests) ---
+    # Each starts by settling C so home crystallizes, then drives the harmonic
+    # target across a deliberate path. Played through the same fixture player.
+
+    # Walk A — fifths journey (y-axis travel). Diatonic triads only (clarity
+    # stays high), modulating by fifths WITHOUT V-I cadences (I-V-IV-I per key,
+    # so home is not impulse-pulled and lags behind via ROOTEDNESS). Displacement
+    # swings sharpward then flatward → the target sweeps up then down the y axis.
+    def key_block(k):
+        return [(k % 12, MAJ), ((k + 7) % 12, MAJ), ((k + 5) % 12, MAJ), (k % 12, MAJ)]
+    # Establish with cadential C major (V-I anchors home firmly at C, avoiding
+    # the C-major / A-minor relative ambiguity of the I-vi-IV-I settle phrase).
+    intro = C_DIATONIC
+    sharpward = [0, 7, 2, 9, 4]          # C G D A E
+    flatward = [4, 9, 2, 7, 0, 5, 10, 3]  # back down, then F Bb Eb
+    journey = list(intro)
+    for k in sharpward + flatward:
+        journey += key_block(k)
+    w("walk_fifths_journey.mid", _seq(journey, 1.5))
+
+    # Walk B — spectral sweep (x-axis travel). Hold the tonal center near C so
+    # home stays put, but morph chord evenness from dense clusters → sevenths →
+    # triads → augmented and back. The target slides along the harmonic↔inharmonic
+    # axis; the particle tracks it left↔right when clarity permits.
+    sweep_qualities = [CLUSTER4, CLUSTER, MIN7, DOM7, MAJ7, MAJ, QUARTAL, AUG,
+                       QUARTAL, MAJ, MAJ7, DOM7, MIN7, CLUSTER, CLUSTER4]
+    spectral = list(intro) + [(0, q) for q in sweep_qualities] + [(0, q) for q in reversed(sweep_qualities)]
+    w("walk_spectral_sweep.mid", _seq(spectral, 1.6))
+
+    # Walk C — grand tour (diagonal). Modulate sharpward AND brighten quality
+    # together, then flatward AND darken — a diagonal path meant to visit
+    # several different anchor regions rather than one row or column.
+    tour = list(intro)
+    for k, q in zip([0, 7, 2, 9, 4, 9, 2, 7, 0], [CLUSTER, MIN7, DOM7, MAJ, AUG, MAJ, DOM7, MIN7, CLUSTER]):
+        tour += [(k % 12, q), ((k + 5) % 12, MAJ)]
+    w("walk_grand_tour.mid", _seq(tour, 1.5))
+
+    # Walk D — home-and-back (path dependence). Settle C, leap to the tritone
+    # (F#) and dwell while home migrates there, then return to C — which now
+    # reads as displaced, parking the particle in a different basin than it
+    # started. The visual proof of "you can't go home again."
+    fsharp = [(6, MAJ), (1, MAJ), (11, MIN), (6, MAJ)]
+    home_and_back = list(intro) + fsharp * 12 + list(intro)
+    w("walk_home_and_back.mid", _seq(home_and_back, 1.5))
 
     # 7. Cadence pair: same chord multiset, with/without V-I adjacency into G.
     g_section_yes = [(7, MAJ), (4, MIN), (0, MAJ), (2, DOM7),

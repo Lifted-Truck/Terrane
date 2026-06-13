@@ -46,7 +46,11 @@
     <canvas id="hist" width="340" height="54"></canvas>
   </div>
   <div class="panel">
-    <h3>Fixtures</h3>
+    <h3>Walks <span style="font-weight:normal;color:var(--dim)">— click to play, Session reset to stop</span></h3>
+    <div id="walks"></div>
+  </div>
+  <div class="panel">
+    <h3>Test fixtures</h3>
     <div id="fixtures"></div>
     <div style="margin-top:8px; display:flex; gap:6px;">
       <button id="dropAnchor" title="pin home at the current local key">Drop anchor</button>
@@ -122,13 +126,26 @@ function buildControls() {
     row.append(lab, input, val); box.append(row);
   }
 }
+const WALK_INFO = {
+  "walk_fifths_journey.mid": ["Fifths journey", "Modulates around the circle of fifths with clear triads; displacement swings sharpward then flatward, walking the particle up and down the manifold."],
+  "walk_spectral_sweep.mid": ["Spectral sweep", "Holds the key, morphs chord evenness from clusters to augmented and back; the particle tracks left↔right along the harmonic↔inharmonic axis."],
+  "walk_grand_tour.mid": ["Grand tour", "Modulates and changes chord colour together — a diagonal path visiting several anchor regions."],
+  "walk_home_and_back.mid": ["Home & back", "Leaps to the tritone and dwells while home migrates there, then returns to C — now displaced. You-can't-go-home-again."],
+};
 function buildFixtures() {
+  const walks = document.getElementById("walks");
   const box = document.getElementById("fixtures");
   for (const f of fixtures) {
     const b = document.createElement("button");
-    b.textContent = f.replace(".mid", "");
     b.onclick = () => send({ type: "fixture", name: f });
-    box.append(b);
+    if (WALK_INFO[f]) {
+      b.textContent = WALK_INFO[f][0];
+      b.title = WALK_INFO[f][1];
+      walks.append(b);
+    } else {
+      b.textContent = f.replace(".mid", "");
+      box.append(b);
+    }
   }
 }
 function buildAnchorControls() {

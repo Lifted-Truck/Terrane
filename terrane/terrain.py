@@ -73,30 +73,34 @@ class Terrain:
 
     def config(self, h: HarmonicState) -> TerrainConfig:
         p = self.params
+        # Anchors are FIXED timbral landmarks (the synthesis coordinates in
+        # Phase 2) — they never move. Harmonic state instead roams a target
+        # point across the fixed-anchor manifold (evenness → x along the
+        # harmonic↔inharmonic axis; fifths displacement → y), and the anchors
+        # nearest that target deepen into the active basin. Modulating sweeps
+        # the target across the field, so the particle walks toward *different*
+        # fixed anchors — remote keys reach remote timbres (§7.3). The sound is
+        # the particle's absolute position relative to the fixed landmarks.
         tx, ty = self.target_point(h)
-        shift_y = p.disp_gain * h.displacement
         focus = []
         for a in self.anchors:
-            d2 = (a.x - tx) ** 2 + (a.y + shift_y - ty) ** 2
+            d2 = (a.x - tx) ** 2 + (a.y - ty) ** 2
             focus.append(math.exp(-d2 / (2.0 * p.focus_rho**2)))
         peak = max(focus) or 1.0
 
         centers: list[tuple[float, float]] = []
         weights: list[float] = []
         sigmas: list[tuple[float, float]] = []
-        for a, f in zip(self.anchors, focus):
+        for i, (a, f) in enumerate(zip(self.anchors, focus)):
             rel = f / peak
-            # clarity 1: depth concentrated on the basin nearest the target;
+            # clarity 1: depth concentrated on the anchor nearest the target;
             # clarity 0: uniform shallow wells (splintered, restless).
             depth = p.depth_scale * a.depth * (
                 h.clarity * rel + (1.0 - h.clarity) * p.shallow_frac
             )
-            idx = len(weights)
-            depth *= 1.0 + p.habituation_gain * p.habituation_polarity * self.habit[idx]
-            cx = a.x + 0.20 * rel * h.clarity * (tx - a.x)  # evenness pull on the active basin
-            cy = a.y + shift_y
+            depth *= 1.0 + p.habituation_gain * p.habituation_polarity * self.habit[i]
             stretch = 1.0 + p.mode_asym * h.mode_rel
-            centers.append((cx, cy))
+            centers.append((a.x, a.y))  # fixed — the well sits on its landmark
             weights.append(-depth)
             sigmas.append((a.sigma * stretch, a.sigma / stretch))
         dominant = max(range(len(weights)), key=lambda i: -weights[i])

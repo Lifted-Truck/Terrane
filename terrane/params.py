@@ -19,7 +19,7 @@ class Params:
     shallow_frac: float = 0.30       # well depth when clarity = 0 (splintered terrain)
     evenness_x_min: float = 0.18     # inharmonic end of the spectral axis (x)
     evenness_x_max: float = 0.82     # harmonic end
-    disp_gain: float = 0.05          # terrain translation per fifth of displacement (y)
+    disp_gain: float = 0.06          # target-point travel up the y axis per fifth of displacement
     mode_asym: float = 0.15          # sigma asymmetry for cross-mode relationship (sketch level)
     wall_k: float = 60.0             # soft-wall stiffness outside [0,1]^2
 
