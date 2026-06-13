@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "terrane",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "terrane.server"],
+      "port": 8800
+    }
+  ]
+}

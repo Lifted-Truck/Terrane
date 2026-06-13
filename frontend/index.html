@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TERRANE — Phase 1</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --ink:#c9d1d9; --dim:#8b949e; --accent:#58a6ff; --warm:#f0883e; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:13px/1.4 -apple-system, 'Segoe UI', sans-serif; display:flex; gap:14px; padding:14px; }
+  #left { flex:0 0 auto; }
+  #main { display:block; background:#000; border-radius:8px; cursor:crosshair; }
+  #side { flex:1; min-width:300px; max-width:380px; display:flex; flex-direction:column; gap:12px; }
+  .panel { background:var(--panel); border:1px solid #21262d; border-radius:8px; padding:10px 12px; }
+  .panel h3 { margin:0 0 8px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); }
+  .row { display:flex; align-items:center; gap:8px; margin:3px 0; }
+  .row label { flex:0 0 130px; color:var(--dim); font-size:12px; }
+  .row input[type=range] { flex:1; accent-color:var(--accent); }
+  .row .val { flex:0 0 46px; text-align:right; font-variant-numeric:tabular-nums; font-size:11px; }
+  button { background:#21262d; color:var(--ink); border:1px solid #30363d; border-radius:6px; padding:4px 10px; cursor:pointer; font-size:12px; }
+  button:hover { border-color:var(--accent); }
+  #fixtures { display:flex; flex-wrap:wrap; gap:6px; }
+  #compass { display:block; margin:0 auto; }
+  #status { color:var(--dim); font-size:11px; }
+  #hist { display:block; width:100%; height:54px; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; background:#21262d; }
+  .pill.on { background:#1f6feb33; color:var(--accent); }
+</style>
+</head>
+<body>
+<div id="left">
+  <canvas id="main" width="700" height="700"></canvas>
+  <div class="panel" style="margin-top:10px">
+    <span id="midi" class="pill">MIDI: …</span>
+    <span id="conn" class="pill">WS: connecting</span>
+    <span class="pill" title="play with the computer keyboard">keys: a w s e d f t g y h u j k = C4..C5</span>
+  </div>
+</div>
+<div id="side">
+  <div class="panel">
+    <h3>Fifths compass</h3>
+    <canvas id="compass" width="210" height="210"></canvas>
+    <div id="status"></div>
+  </div>
+  <div class="panel">
+    <h3>Pitch-class histograms (fast / session)</h3>
+    <canvas id="hist" width="340" height="54"></canvas>
+  </div>
+  <div class="panel">
+    <h3>Fixtures</h3>
+    <div id="fixtures"></div>
+    <div style="margin-top:8px; display:flex; gap:6px;">
+      <button id="dropAnchor" title="pin home at the current local key">Drop anchor</button>
+      <button id="reset">Session reset</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>Anchor <span id="anchorName" style="color:var(--ink)">—</span> <span style="font-weight:normal;color:var(--dim)">(click to select, drag to move)</span></h3>
+    <div id="anchorControls"></div>
+  </div>
+  <div class="panel" style="overflow-y:auto; max-height:46vh;">
+    <h3>Feel parameters</h3>
+    <div id="controls"></div>
+  </div>
+</div>
+<script>
+"use strict";
+const PC_NAMES = ["C","G","D","A","E","B","F#","Db","Ab","Eb","Bb","F"]; // fifths order
+const NOTE_NAMES = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"];
+let ws, state = null, params = null, anchors = [], fixtures = [];
+let trail = [], selectedAnchor = -1, dragging = false;
+
+const CONTROL_SPEC = [
+  ["mass", "particle mass", 0.2, 5, 0.05],
+  ["friction", "particle friction", 0.2, 12, 0.1],
+  ["slew_tau", "terrain slew (s)", 0.05, 3, 0.05],
+  ["rootedness", "ROOTEDNESS", 0, 1, 0.01],
+  ["cadence_impulse", "cadence impulse", 0, 1, 0.01],
+  ["crystallization_margin", "crystallize margin", 0.005, 0.3, 0.005],
+  ["gate_margin", "confidence gate", 0, 0.2, 0.005],
+  ["clarity_ref", "clarity ref (margin)", 0.02, 0.6, 0.01],
+  ["g_density", "force: density", 0, 2, 0.01],
+  ["g_register", "force: register", 0, 2, 0.01],
+  ["g_vl", "force: VL work", 0, 0.2, 0.001],
+  ["habituation_polarity", "HABITUATION POLARITY", -1, 1, 0.01],
+  ["habituation_gain", "habituation gain", 0, 1, 0.01],
+  ["disp_gain", "fifths translation", 0, 0.12, 0.002],
+  ["focus_rho", "basin focus radius", 0.05, 0.6, 0.01],
+  ["shallow_frac", "splinter depth", 0, 1, 0.01],
+  ["hist_fast_tau", "key window (s)", 3, 60, 1],
+];
+
+function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+function connect() {
+  ws = new WebSocket(`ws://${location.hostname}:8765`);
+  ws.onopen = () => conn.textContent = "WS: live", conn.classList.add("on");
+  ws.onclose = () => { conn.textContent = "WS: reconnecting…"; conn.classList.remove("on"); setTimeout(connect, 800); };
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type !== "state") return;
+    state = msg.state; anchors = msg.anchors;
+    if (!params) { params = msg.params; buildControls(); }
+    if (!fixtures.length && msg.fixtures.length) { fixtures = msg.fixtures; buildFixtures(); }
+    trail.push([state.particle.x, state.particle.y]);
+    if (trail.length > 360) trail.shift();
+  };
+}
+connect();
+
+// ---------- controls ----------
+function buildControls() {
+  const box = document.getElementById("controls");
+  box.innerHTML = "";
+  for (const [key, label, min, max, step] of CONTROL_SPEC) {
+    const row = document.createElement("div"); row.className = "row";
+    const val = document.createElement("span"); val.className = "val";
+    const input = document.createElement("input");
+    Object.assign(input, { type: "range", min, max, step, value: params[key] });
+    val.textContent = (+params[key]).toFixed(3);
+    input.oninput = () => { val.textContent = (+input.value).toFixed(3); send({ type: "params", values: { [key]: +input.value } }); };
+    const lab = document.createElement("label"); lab.textContent = label;
+    row.append(lab, input, val); box.append(row);
+  }
+}
+function buildFixtures() {
+  const box = document.getElementById("fixtures");
+  for (const f of fixtures) {
+    const b = document.createElement("button");
+    b.textContent = f.replace(".mid", "");
+    b.onclick = () => send({ type: "fixture", name: f });
+    box.append(b);
+  }
+}
+function buildAnchorControls() {
+  const box = document.getElementById("anchorControls");
+  box.innerHTML = "";
+  if (selectedAnchor < 0) return;
+  const a = anchors[selectedAnchor];
+  document.getElementById("anchorName").textContent = a.name;
+  for (const [field, min, max, step] of [["depth", 0, 2, 0.01], ["sigma", 0.04, 0.5, 0.005]]) {
+    const row = document.createElement("div"); row.className = "row";
+    const val = document.createElement("span"); val.className = "val"; val.textContent = (+a[field]).toFixed(2);
+    const input = document.createElement("input");
+    Object.assign(input, { type: "range", min, max, step, value: a[field] });
+    input.oninput = () => { val.textContent = (+input.value).toFixed(2); send({ type: "anchor", index: selectedAnchor, [field]: +input.value }); };
+    const lab = document.createElement("label"); lab.textContent = field;
+    row.append(lab, input, val); box.append(row);
+  }
+}
+document.getElementById("dropAnchor").onclick = () => send({ type: "drop_anchor" });
+document.getElementById("reset").onclick = () => { trail = []; send({ type: "reset" }); };
+
+// ---------- anchor drag ----------
+const main = document.getElementById("main");
+const toWorld = (ev) => {
+  const r = main.getBoundingClientRect();
+  return [(ev.clientX - r.left) / r.width, 1 - (ev.clientY - r.top) / r.height];
+};
+main.onmousedown = (ev) => {
+  const [x, y] = toWorld(ev);
+  let best = -1, bd = 0.05;
+  anchors.forEach((a, i) => { const d = Math.hypot(a.x - x, a.y - y); if (d < bd) { bd = d; best = i; } });
+  selectedAnchor = best; dragging = best >= 0; buildAnchorControls();
+};
+main.onmousemove = (ev) => {
+  if (!dragging || selectedAnchor < 0) return;
+  const [x, y] = toWorld(ev);
+  send({ type: "anchor", index: selectedAnchor, x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) });
+};
+window.onmouseup = () => dragging = false;
+
+// ---------- MIDI + computer keyboard ----------
+if (navigator.requestMIDIAccess) {
+  navigator.requestMIDIAccess().then((access) => {
+    const names = [...access.inputs.values()].map((i) => i.name);
+    document.getElementById("midi").textContent = names.length ? `MIDI: ${names.join(", ")}` : "MIDI: no inputs";
+    if (names.length) document.getElementById("midi").classList.add("on");
+    for (const input of access.inputs.values()) {
+      input.onmidimessage = (m) => {
+        const [st, d1, d2] = m.data, cmd = st & 0xf0;
+        if (cmd === 0x90 && d2 > 0) send({ type: "note_on", midi: d1, velocity: d2 });
+        else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) send({ type: "note_off", midi: d1 });
+      };
+    }
+  }, () => document.getElementById("midi").textContent = "MIDI: unavailable");
+} else document.getElementById("midi").textContent = "MIDI: unsupported";
+
+const KEYMAP = { a:60, w:61, s:62, e:63, d:64, f:65, t:66, g:67, y:68, h:69, u:70, j:71, k:72 };
+const down = new Set();
+window.onkeydown = (ev) => {
+  const n = KEYMAP[ev.key]; if (n === undefined || down.has(n) || ev.repeat) return;
+  down.add(n); send({ type: "note_on", midi: n, velocity: 85 });
+};
+window.onkeyup = (ev) => {
+  const n = KEYMAP[ev.key]; if (n === undefined) return;
+  down.delete(n); send({ type: "note_off", midi: n });
+};
+
+// ---------- render ----------
+const ctx = main.getContext("2d");
+const G = 88; // potential grid resolution
+const field = new Float32Array(G * G);
+const img = new OffscreenCanvas(G, G);
+const ictx = img.getContext("2d");
+const idata = ictx.createImageData(G, G);
+
+function potential(t, x, y) {
+  let u = 0;
+  for (let i = 0; i < t.centers.length; i++) {
+    const dx = x - t.centers[i][0], dy = y - t.centers[i][1];
+    const sx = t.sigmas[i][0], sy = t.sigmas[i][1];
+    u += t.weights[i] * Math.exp(-(dx * dx / (2 * sx * sx) + dy * dy / (2 * sy * sy)));
+  }
+  return u;
+}
+
+function drawTerrain(t, clarity) {
+  let lo = 1e9, hi = -1e9;
+  for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
+    const u = potential(t, i / (G - 1), j / (G - 1));
+    field[j * G + i] = u;
+    if (u < lo) lo = u; if (u > hi) hi = u;
+  }
+  const span = Math.max(hi - lo, 1e-6);
+  for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
+    const u = (field[j * G + i] - lo) / span;       // 0 = deepest well
+    const band = (1 - u) * 9;
+    const line = Math.abs(band - Math.round(band)) < 0.06 ? 0.22 : 0; // contour lines
+    const d = 1 - u;
+    const r = 8 + 30 * u + 18 * d, g = 14 + 44 * u + 70 * d, b = 26 + 52 * u + 110 * d;
+    const k = (j * G + i) * 4;
+    const dim = 0.35 + 0.65 * Math.min(1, 0.25 + clarity); // cold start reads dim
+    idata.data[k] = r * dim * (1 - line);
+    idata.data[k + 1] = g * dim * (1 - line);
+    idata.data[k + 2] = b * dim * (1 - line);
+    idata.data[k + 3] = 255;
+  }
+  ictx.putImageData(idata, 0, 0);
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.scale(1, -1); // world y up
+  ctx.drawImage(img, 0, -700, 700, 700);
+  ctx.restore();
+}
+
+const W = (x) => x * 700, H = (y) => 700 - y * 700;
+
+function render() {
+  requestAnimationFrame(render);
+  if (!state) return;
+  const t = state.terrain, h = state.h, c = state.compass;
+  drawTerrain(t, h.clarity);
+
+  // terrain target
+  ctx.strokeStyle = "#ffffff30"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(W(t.target[0]) - 7, H(t.target[1])); ctx.lineTo(W(t.target[0]) + 7, H(t.target[1]));
+  ctx.moveTo(W(t.target[0]), H(t.target[1]) - 7); ctx.lineTo(W(t.target[0]), H(t.target[1]) + 7); ctx.stroke();
+
+  // anchors
+  anchors.forEach((a, i) => {
+    const ex = t.centers[i], dom = i === t.dominant;
+    ctx.beginPath(); ctx.arc(W(ex[0]), H(ex[1]), dom ? 6 : 4, 0, 7);
+    ctx.fillStyle = i === selectedAnchor ? "#f0883e" : dom ? "#58a6ff" : "#8b949e88";
+    ctx.fill();
+    ctx.fillStyle = "#c9d1d9aa"; ctx.font = "11px sans-serif";
+    ctx.fillText(a.name, W(ex[0]) + 8, H(ex[1]) + 4);
+  });
+
+  // trail + particle
+  for (let i = 1; i < trail.length; i++) {
+    ctx.strokeStyle = `rgba(240,136,62,${(i / trail.length) * 0.55})`;
+    ctx.lineWidth = 1 + (i / trail.length) * 1.5;
+    ctx.beginPath(); ctx.moveTo(W(trail[i - 1][0]), H(trail[i - 1][1])); ctx.lineTo(W(trail[i][0]), H(trail[i][1])); ctx.stroke();
+  }
+  const p = state.particle;
+  ctx.beginPath(); ctx.arc(W(p.x), H(p.y), 7, 0, 7);
+  ctx.fillStyle = "#f0883e"; ctx.fill();
+  ctx.strokeStyle = "#fff8"; ctx.lineWidth = 1.5; ctx.stroke();
+
+  drawCompass(c, h);
+  drawHist();
+  document.getElementById("status").innerHTML =
+    `local: <b>${c.local_tonic_pc === null ? "—" : NOTE_NAMES[c.local_tonic_pc] + " " + c.local_mode}</b>` +
+    ` &nbsp;margin ${c.margin.toFixed(3)} &nbsp;|&nbsp; home: <b>${c.crystallized ? NOTE_NAMES[homePc(c)] + " " + c.home_mode : "uncrystallized"}</b>` +
+    `<br>h = (disp ${h.displacement.toFixed(2)} fifths, clarity ${h.clarity.toFixed(2)}, even ${h.evenness.toFixed(2)}, mode ${h.mode_rel.toFixed(2)})` +
+    ` &nbsp;density ${state.features.density.toFixed(1)}/s &nbsp;VL ${state.features.last_effort.toFixed(0)}st`;
+}
+
+function homePc(c) {
+  // nearest pc on the fifths circle to theta_home
+  const idx = Math.round(c.theta_home / (Math.PI / 6)) % 12;
+  return [0,7,2,9,4,11,6,1,8,3,10,5][(idx + 12) % 12];
+}
+
+const cctx = document.getElementById("compass").getContext("2d");
+function drawCompass(c, h) {
+  const S = 210, R = 78, cx = S / 2, cy = S / 2;
+  cctx.clearRect(0, 0, S, S);
+  cctx.globalAlpha = c.crystallized ? 1 : 0.35;
+  cctx.strokeStyle = "#30363d"; cctx.lineWidth = 1;
+  cctx.beginPath(); cctx.arc(cx, cy, R, 0, 7); cctx.stroke();
+  cctx.font = "10px sans-serif"; cctx.textAlign = "center"; cctx.textBaseline = "middle";
+  for (let i = 0; i < 12; i++) {
+    const a = i * Math.PI / 6 - Math.PI / 2;
+    cctx.fillStyle = "#8b949e";
+    cctx.fillText(PC_NAMES[i], cx + (R + 13) * Math.cos(a), cy + (R + 13) * Math.sin(a));
+  }
+  // confidence arc around local key
+  if (c.local_tonic_pc !== null) {
+    const a = ((c.local_tonic_pc * 7) % 12) * Math.PI / 6 - Math.PI / 2;
+    cctx.strokeStyle = "#58a6ff";
+    cctx.lineWidth = 4;
+    cctx.beginPath(); cctx.arc(cx, cy, R, a - c.confidence * 0.5, a + c.confidence * 0.5); cctx.stroke();
+    cctx.fillStyle = "#58a6ff";
+    cctx.beginPath(); cctx.arc(cx + R * Math.cos(a), cy + R * Math.sin(a), 5, 0, 7); cctx.fill();
+  }
+  // home marker + pull chord
+  const ha = c.theta_home - Math.PI / 2;
+  cctx.fillStyle = c.home_mode === "minor" ? "#bc8cff" : "#f0883e";
+  cctx.beginPath(); cctx.arc(cx + R * Math.cos(ha), cy + R * Math.sin(ha), 6, 0, 7); cctx.fill();
+  if (c.local_tonic_pc !== null && c.crystallized) {
+    const la = ((c.local_tonic_pc * 7) % 12) * Math.PI / 6 - Math.PI / 2;
+    cctx.strokeStyle = "#f0883e55"; cctx.lineWidth = 2;
+    cctx.beginPath(); cctx.moveTo(cx + R * Math.cos(ha), cy + R * Math.sin(ha));
+    cctx.lineTo(cx + R * Math.cos(la), cy + R * Math.sin(la)); cctx.stroke();
+  }
+  cctx.globalAlpha = 1;
+}
+
+const hctx = document.getElementById("hist").getContext("2d");
+function drawHist() {
+  hctx.clearRect(0, 0, 340, 54);
+  const fast = state.fast_hist, sess = state.session_hist;
+  const fm = Math.max(...fast, 1e-6), sm = Math.max(...sess, 1e-6);
+  for (let pc = 0; pc < 12; pc++) {
+    const x = pc * 28 + 4;
+    hctx.fillStyle = "#58a6ff";
+    hctx.fillRect(x, 40 - 36 * (fast[pc] / fm), 10, 36 * (fast[pc] / fm));
+    hctx.fillStyle = "#8b949e66";
+    hctx.fillRect(x + 11, 40 - 36 * (sess[pc] / sm), 5, 36 * (sess[pc] / sm));
+    hctx.fillStyle = "#8b949e"; hctx.font = "9px sans-serif"; hctx.textAlign = "left";
+    hctx.fillText(NOTE_NAMES[pc], x, 51);
+  }
+}
+render();
+</script>
+</body>
+</html>

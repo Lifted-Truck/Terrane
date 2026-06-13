@@ -1,0 +1,117 @@
+"""Synthetic MIDI test fixtures (design doc Part II). Deterministic by
+construction — chord lists are literal, no randomness. Regenerate with:
+    python -m terrane.fixtures
+"""
+
+from __future__ import annotations
+
+import os
+
+import mido
+
+MAJ = (0, 4, 7)
+MIN = (0, 3, 7)
+DOM7 = (0, 4, 7, 10)
+MIN7 = (0, 3, 7, 10)
+
+
+def chord(root_pc: int, quality: tuple[int, ...]) -> list[int]:
+    """Root-position voicing with the bass in octave 3 (bass pc = root,
+    which the stopgap cadence detector's root proxy relies on)."""
+    bass = 48 + (root_pc % 12)
+    return [bass + i for i in quality]
+
+
+def write_chords(path: str, chords: list[tuple[list[int], float]], velocity: int = 80) -> None:
+    """chords = [(midi_notes, duration_seconds), ...] played back to back."""
+    mid = mido.MidiFile(ticks_per_beat=480)
+    track = mido.MidiTrack()
+    mid.tracks.append(track)
+    track.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(120), time=0))
+    ticks_per_second = 960  # 480 tpb at 120 bpm
+
+    def t(seconds: float) -> int:
+        return round(seconds * ticks_per_second)
+
+    gap = 0.04  # release-to-next-attack gap so held sets fully separate
+    for notes, dur in chords:
+        for i, n in enumerate(notes):
+            track.append(mido.Message("note_on", note=n, velocity=velocity, time=t(gap) if i == 0 else 0))
+        for i, n in enumerate(notes):
+            track.append(mido.Message("note_off", note=n, velocity=0, time=t(dur - gap) if i == 0 else 0))
+    mid.save(path)
+
+
+def _seq(progression: list[tuple[int, tuple[int, ...]]], dur: float) -> list[tuple[list[int], float]]:
+    return [(chord(r, q), dur) for r, q in progression]
+
+
+# Progressions as (root_pc, quality). C=0, D=2, E=4, F=5, G=7, A=9, B=11.
+C_SETTLE = [(0, MAJ), (9, MIN), (5, MAJ), (0, MAJ)]          # I vi IV I — no V-I adjacency
+C_DIATONIC = [(0, MAJ), (5, MAJ), (7, MAJ), (0, MAJ),        # I IV V I vi IV V I
+              (9, MIN), (5, MAJ), (7, MAJ), (0, MAJ)]
+
+
+def build_all(out_dir: str) -> list[str]:
+    os.makedirs(out_dir, exist_ok=True)
+    written = []
+
+    def w(name: str, chords: list[tuple[list[int], float]]) -> None:
+        path = os.path.join(out_dir, name)
+        write_chords(path, chords)
+        written.append(path)
+
+    # 1. Diatonic progression held in one key (convergence)
+    w("diatonic_hold.mid", _seq(C_DIATONIC * 4, 1.0))
+
+    # 2a. Pivot-chord modulation to the dominant (lazy drift)
+    pivot = C_DIATONIC * 2 + [(9, MIN), (2, DOM7), (7, MAJ)] + \
+            [(7, MAJ), (0, MAJ), (2, DOM7), (7, MAJ)] * 6
+    w("pivot_modulation.mid", _seq(pivot, 1.0))
+
+    # 2b. Abrupt tritone modulation (urgency, continuity stress test)
+    tritone = C_DIATONIC * 2 + [(6, MAJ), (11, MAJ), (1, DOM7), (6, MAJ)] * 6
+    w("tritone_modulation.mid", _seq(tritone, 1.0))
+
+    # 3. Modulate-and-stay, >= 3 minutes (naturalization). C ~24s, E ~170s.
+    e_major = [(4, MAJ), (9, MAJ), (11, DOM7), (4, MAJ),
+               (1, MIN), (9, MAJ), (11, DOM7), (4, MAJ)]
+    stay = C_DIATONIC * 3 + [(0, MAJ), (11, DOM7), (4, MAJ)] + e_major * 21
+    w("modulate_and_stay.mid", _seq(stay, 1.0))
+
+    # 4. Chromatic/atonal sequence after a settled start (gating, ruggedness).
+    clusters = []
+    for k in range(45):  # ~45 s of near-uniform pc coverage
+        root = (k * 5 + (k * k) % 7) % 12
+        shape = [(0, 1, 2), (0, 1, 3, 6), (0, 2, 3), (0, 1, 4, 5)][k % 4]
+        clusters.append(([48 + (root + i) % 24 for i in shape], 1.0))
+    w("chromatic.mid", _seq(C_SETTLE * 3, 1.0) + clusters)
+
+    # 5. Repeated 4-chord loop, many traversals (repetition/plasticity stub)
+    w("loop4.mid", _seq([(0, MAJ), (9, MIN), (5, MAJ), (7, MAJ)] * 30, 1.0))
+
+    # 6. Two-route-same-destination pair (hysteresis). Both end identically in
+    # Eb — but briefly: a long shared tail would erase the very history the
+    # pair exists to measure.
+    eb_tail = [(3, MAJ), (8, MAJ), (10, DOM7), (3, MAJ)]
+    route_a = C_SETTLE * 2 + [(0, MAJ), (5, MAJ), (10, MAJ), (3, MAJ)] * 3 + eb_tail
+    route_b = C_SETTLE * 2 + [(0, MAJ), (7, MAJ), (2, MAJ), (9, MAJ), (4, MAJ),
+                              (11, MAJ), (6, MAJ), (1, MAJ), (8, MAJ), (3, MAJ)] + eb_tail
+    w("route_a.mid", _seq(route_a, 1.0))
+    w("route_b.mid", _seq(route_b, 1.0))
+
+    # 7. Cadence pair: same chord multiset, with/without V-I adjacency into G.
+    g_section_yes = [(7, MAJ), (4, MIN), (0, MAJ), (2, DOM7),
+                     (7, MAJ), (4, MIN), (0, MAJ), (2, DOM7), (7, MAJ)]
+    g_section_no = [(7, MAJ), (2, DOM7), (4, MIN), (0, MAJ),
+                    (7, MAJ), (2, DOM7), (4, MIN), (0, MAJ), (7, MAJ)]
+    w("cadence_yes.mid", _seq(C_SETTLE * 3 + g_section_yes, 1.0))
+    w("cadence_no.mid", _seq(C_SETTLE * 3 + g_section_no, 1.0))
+
+    return written
+
+
+if __name__ == "__main__":
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for path in build_all(os.path.join(here, "fixtures")):
+        print(path)

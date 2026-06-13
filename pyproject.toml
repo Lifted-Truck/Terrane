@@ -1,0 +1,12 @@
+[project]
+name = "terrane"
+version = "0.1.0"
+description = "TERRANE Phase 1 — visualization prototype (MIDI -> harmonic state -> home -> terrain -> particle -> render)"
+requires-python = ">=3.11"
+dependencies = ["mido", "websockets"]
+
+[tool.setuptools]
+packages = ["terrane"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
