@@ -183,6 +183,9 @@ class Engine:
             },
             "session_hist": self.session_hist.snapshot(),
             "fast_hist": self.fast_hist.snapshot(),
+            # Currently-sounding notes [midi, velocity01], so the (minimal,
+            # browser-side) audio prototype can voice what is being analysed.
+            "held": [[m, round(v, 3)] for m, v in sorted(self.tracker._held.items())],
         }
 
     # ---- manual overrides (live controls) ----

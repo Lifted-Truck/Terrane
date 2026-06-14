@@ -24,6 +24,17 @@
   #hist { display:block; width:100%; height:54px; }
   .pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; background:#21262d; }
   .pill.on { background:#1f6feb33; color:var(--accent); }
+  #presets { display:flex; flex-wrap:wrap; gap:6px; }
+  #presets button { padding:6px 11px; }
+  #presets button.active { border-color:var(--warm); color:var(--warm); background:#f0883e1a; }
+  #presetDesc { color:var(--dim); font-size:11px; margin-top:8px; min-height:28px; }
+  #soundbar { display:flex; align-items:center; gap:10px; margin-top:10px; }
+  #soundbar input[type=range] { flex:1; accent-color:var(--warm); }
+  #soundToggle.on { border-color:var(--warm); color:var(--warm); background:#f0883e1a; }
+  details > summary { cursor:pointer; color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.08em; list-style:none; }
+  details > summary::-webkit-details-marker { display:none; }
+  details > summary::before { content:"▸ "; }
+  details[open] > summary::before { content:"▾ "; }
 </style>
 </head>
 <body>
@@ -33,9 +44,19 @@
     <span id="midi" class="pill">MIDI: …</span>
     <span id="conn" class="pill">WS: connecting</span>
     <span class="pill" title="play with the computer keyboard">keys: a w s e d f t g y h u j k = C4..C5</span>
+    <div id="soundbar">
+      <button id="soundToggle" title="audio needs a click to start (browser policy)">🔇 Sound off</button>
+      <label style="color:var(--dim);font-size:11px;">vol</label>
+      <input id="vol" type="range" min="0" max="1" step="0.01" value="0.5">
+    </div>
   </div>
 </div>
 <div id="side">
+  <div class="panel">
+    <h3>Character <span style="font-weight:normal;color:var(--dim)">— how the instrument moves</span></h3>
+    <div id="presets"></div>
+    <div id="presetDesc"></div>
+  </div>
   <div class="panel">
     <h3>Fifths compass</h3>
     <canvas id="compass" width="210" height="210"></canvas>
@@ -61,9 +82,11 @@
     <h3>Anchor <span id="anchorName" style="color:var(--ink)">—</span> <span style="font-weight:normal;color:var(--dim)">(click to select, drag to move)</span></h3>
     <div id="anchorControls"></div>
   </div>
-  <div class="panel" style="overflow-y:auto; max-height:46vh;">
-    <h3>Feel parameters</h3>
-    <div id="controls"></div>
+  <div class="panel">
+    <details>
+      <summary>Advanced — individual feel parameters</summary>
+      <div id="controls" style="margin-top:8px; max-height:40vh; overflow-y:auto;"></div>
+    </details>
   </div>
 </div>
 <script>
@@ -103,7 +126,7 @@ function connect() {
     const msg = JSON.parse(ev.data);
     if (msg.type !== "state") return;
     state = msg.state; anchors = msg.anchors;
-    if (!params) { params = msg.params; buildControls(); }
+    if (!params) { params = msg.params; buildControls(); buildPresets(); }
     if (!fixtures.length && msg.fixtures.length) { fixtures = msg.fixtures; buildFixtures(); }
     trail.push([state.particle.x, state.particle.y]);
     if (trail.length > 360) trail.shift();
@@ -126,6 +149,53 @@ function buildControls() {
     row.append(lab, input, val); box.append(row);
   }
 }
+// ---------- presets (named characters; bundles of feel parameters) ----------
+const PRESETS = [
+  { label: "Settled", desc: "Balanced and legible — stable motion, a firm sense of home. The clearest place to start.",
+    values: { mass: 1.0, friction: 3.5, slew_tau: 0.6, rootedness: 0.7, clarity_ref: 0.18,
+      g_density: 0.35, g_register: 0.30, g_vl: 0.015, disp_gain: 0.06, focus_rho: 0.25,
+      shallow_frac: 0.30, habituation_polarity: 0, habituation_gain: 0 } },
+  { label: "Restless", desc: "Light and twitchy — the particle skates, reacts fast, and the terrain ruggedness shows. Gesture matters most here.",
+    values: { mass: 0.5, friction: 1.3, slew_tau: 0.25, rootedness: 0.6, clarity_ref: 0.12,
+      g_density: 0.7, g_register: 0.5, g_vl: 0.045, disp_gain: 0.06, focus_rho: 0.22,
+      shallow_frac: 0.45, habituation_polarity: 0, habituation_gain: 0 } },
+  { label: "Molten", desc: "Heavy and slow — sound oozes between timbres over long timescales. Everything lags; nothing snaps.",
+    values: { mass: 2.6, friction: 6.5, slew_tau: 1.6, rootedness: 0.7, clarity_ref: 0.18,
+      g_density: 0.22, g_register: 0.2, g_vl: 0.012, disp_gain: 0.06, focus_rho: 0.3,
+      shallow_frac: 0.3, habituation_polarity: 0, habituation_gain: 0 } },
+  { label: "Anchored", desc: "Home is fixed at session start (max ROOTEDNESS) — every modulation stays exotic forever. A fixed pole star.",
+    values: { mass: 1.2, friction: 4.0, slew_tau: 0.6, rootedness: 1.0, clarity_ref: 0.18,
+      g_density: 0.35, g_register: 0.3, g_vl: 0.015, disp_gain: 0.07, focus_rho: 0.25,
+      shallow_frac: 0.3, habituation_polarity: 0, habituation_gain: 0 } },
+  { label: "Adrift", desc: "Home chases the music (low ROOTEDNESS) — remote keys naturalize almost at once. Hard to ever feel far from home.",
+    values: { mass: 1.0, friction: 3.0, slew_tau: 0.5, rootedness: 0.22, clarity_ref: 0.18,
+      g_density: 0.35, g_register: 0.3, g_vl: 0.015, disp_gain: 0.06, focus_rho: 0.25,
+      shallow_frac: 0.3, habituation_polarity: 0, habituation_gain: 0 } },
+  { label: "Adversarial", desc: "Repetition repels (HABITUATION POLARITY −1) — sustaining a sound takes continued novelty. Phase-1 stub, but you can feel the bias.",
+    values: { mass: 0.9, friction: 2.5, slew_tau: 0.4, rootedness: 0.6, clarity_ref: 0.15,
+      g_density: 0.5, g_register: 0.4, g_vl: 0.03, disp_gain: 0.06, focus_rho: 0.25,
+      shallow_frac: 0.4, habituation_polarity: -1, habituation_gain: 0.6 } },
+];
+function buildPresets() {
+  const box = document.getElementById("presets");
+  box.innerHTML = "";
+  PRESETS.forEach((p, i) => {
+    const b = document.createElement("button");
+    b.textContent = p.label;
+    b.onclick = () => applyPreset(i);
+    box.append(b);
+  });
+  document.getElementById("presetDesc").textContent = "Pick a character — or open Advanced below to tune individual parameters.";
+}
+function applyPreset(i) {
+  const p = PRESETS[i];
+  Object.assign(params, p.values);
+  send({ type: "params", values: p.values });
+  buildControls();  // refresh the advanced sliders to the preset's values
+  document.querySelectorAll("#presets button").forEach((b, j) => b.classList.toggle("active", j === i));
+  document.getElementById("presetDesc").textContent = p.desc;
+}
+
 const WALK_INFO = {
   "walk_fifths_journey.mid": ["Fifths journey", "Modulates around the circle of fifths with clear triads; displacement swings sharpward then flatward, walking the particle up and down the manifold."],
   "walk_spectral_sweep.mid": ["Spectral sweep", "Holds the key, morphs chord evenness from clusters to augmented and back; the particle tracks left↔right along the harmonic↔inharmonic axis."],
@@ -166,6 +236,71 @@ function buildAnchorControls() {
 }
 document.getElementById("dropAnchor").onclick = () => send({ type: "drop_anchor" });
 document.getElementById("reset").onclick = () => { trail = []; send({ type: "reset" }); };
+
+// ---------- audio (minimal sonification prototype) ----------
+// Each sounding note is a 2-operator FM voice. The particle's manifold position
+// sets the timbre: x (harmonic↔inharmonic axis) → modulator:carrier ratio
+// (integer/harmonic at the right, inharmonic/metallic at the left); y → FM index
+// (brightness/aggression). You hear where the particle is, not just see it.
+// This is a throwaway sketch to make the geography audible — NOT the Phase 2 engine.
+let actx = null, master = null;
+const voices = new Map(); // midi -> {car, mod, modGain, amp, f}
+const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+const soundToggle = document.getElementById("soundToggle");
+const vol = document.getElementById("vol");
+
+function audioStart() {
+  if (actx) { actx.resume(); return; }
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  const comp = actx.createDynamicsCompressor();
+  master = actx.createGain();
+  master.gain.value = +vol.value;
+  master.connect(comp); comp.connect(actx.destination);
+}
+function timbre(v) {
+  if (!state) return;
+  const x = clamp01(state.particle.x), y = clamp01(state.particle.y);
+  const ratio = 1.0 + (1 - x) * 1.76;   // x→1 harmonic (ratio 1), x→0 inharmonic (ratio 2.76)
+  const index = 0.3 + y * 4.7;          // y→1 bright/aggressive
+  const t = actx.currentTime;
+  v.mod.frequency.setTargetAtTime(ratio * v.f, t, 0.06);
+  v.modGain.gain.setTargetAtTime(index * ratio * v.f, t, 0.06);
+}
+function voiceOn(midi, vel) {
+  const t = actx.currentTime, f = mtof(midi);
+  const car = actx.createOscillator(), mod = actx.createOscillator();
+  const modGain = actx.createGain(), amp = actx.createGain();
+  car.frequency.value = f; amp.gain.value = 0;
+  mod.connect(modGain); modGain.connect(car.frequency);
+  car.connect(amp); amp.connect(master);
+  car.start(); mod.start();
+  amp.gain.setTargetAtTime(0.16 * (0.3 + vel), t, 0.02);  // soft attack
+  const v = { car, mod, modGain, amp, f };
+  voices.set(midi, v); timbre(v);
+}
+function voiceOff(midi) {
+  const v = voices.get(midi); if (!v) return;
+  const t = actx.currentTime;
+  v.amp.gain.setTargetAtTime(0, t, 0.10);
+  v.car.stop(t + 0.6); v.mod.stop(t + 0.6);
+  voices.delete(midi);
+}
+function audioUpdate() {
+  if (!actx || actx.state !== "running" || !state) return;
+  const held = new Set((state.held || []).map((h) => h[0]));
+  for (const m of [...voices.keys()]) if (!held.has(m)) voiceOff(m);
+  for (const h of (state.held || [])) if (!voices.has(h[0])) voiceOn(h[0], h[1]);
+  for (const v of voices.values()) timbre(v);
+}
+soundToggle.onclick = () => {
+  if (!actx || actx.state === "suspended") {
+    audioStart(); soundToggle.textContent = "🔊 Sound on"; soundToggle.classList.add("on");
+  } else {
+    actx.suspend(); soundToggle.textContent = "🔇 Sound off"; soundToggle.classList.remove("on");
+  }
+};
+vol.oninput = () => { if (master) master.gain.setTargetAtTime(+vol.value, actx.currentTime, 0.03); };
 
 // ---------- anchor drag ----------
 const main = document.getElementById("main");
@@ -265,6 +400,7 @@ const W = (x) => x * 700, H = (y) => 700 - y * 700;
 function render() {
   requestAnimationFrame(render);
   if (!state) return;
+  audioUpdate();
   const t = state.terrain, h = state.h, c = state.compass;
   drawTerrain(t, h.clarity);
 
