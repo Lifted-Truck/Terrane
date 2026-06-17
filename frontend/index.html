@@ -71,6 +71,14 @@
     <div id="walks"></div>
   </div>
   <div class="panel">
+    <h3>Choreography <span style="font-weight:normal;color:var(--dim)">— direct terrain drive (bypasses harmony)</span></h3>
+    <div id="choreo" style="display:flex; flex-wrap:wrap; gap:6px;">
+      <button data-choreo="circle" title="Drives the target in a big circle; the ball follows via its physics. A drone sounds so you hear the timbre sweep.">Big circle</button>
+      <button data-choreo="anchors" title="Visits every anchor region in turn — moves the ball to each landmark so you can hear how each region sounds.">Visit all regions</button>
+      <button data-choreo="corners" title="Drives to the four corners of the manifold and back to centre.">Corners</button>
+    </div>
+  </div>
+  <div class="panel">
     <h3>Test fixtures</h3>
     <div id="fixtures"></div>
     <div style="margin-top:8px; display:flex; gap:6px;">
@@ -236,6 +244,9 @@ function buildAnchorControls() {
 }
 document.getElementById("dropAnchor").onclick = () => send({ type: "drop_anchor" });
 document.getElementById("reset").onclick = () => { trail = []; send({ type: "reset" }); };
+document.querySelectorAll("#choreo button").forEach((b) => {
+  b.onclick = () => { trail = []; send({ type: "choreography", name: b.dataset.choreo }); };
+});
 
 // ---------- audio (minimal sonification prototype) ----------
 // Each sounding note is a 2-operator FM voice. The particle's manifold position
