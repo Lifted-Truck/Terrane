@@ -134,21 +134,36 @@ def build_all(out_dir: str) -> list[str]:
     spectral = list(intro) + [(0, q) for q in sweep_qualities] + [(0, q) for q in reversed(sweep_qualities)]
     w("walk_spectral_sweep.mid", _seq(spectral, 1.6))
 
-    # Walk C — grand tour (diagonal). Modulate sharpward AND brighten quality
-    # together, then flatward AND darken — a diagonal path meant to visit
-    # several different anchor regions rather than one row or column.
-    tour = list(intro)
-    for k, q in zip([0, 7, 2, 9, 4, 9, 2, 7, 0], [CLUSTER, MIN7, DOM7, MAJ, AUG, MAJ, DOM7, MIN7, CLUSTER]):
-        tour += [(k % 12, q), ((k + 5) % 12, MAJ)]
-    w("walk_grand_tour.mid", _seq(tour, 1.5))
+    # Walks C & D drive the ball to specific regions / around a loop USING
+    # harmony — chord quality sets the x position (evenness → harmonic↔inharmonic
+    # axis), modulation sets y (fifths displacement). Each "station" first sets
+    # its key with two diatonic triads (keeping clarity high so the well is deep
+    # enough to pull the particle), then dwells on a colour chord whose evenness
+    # places the target. Because clarity (histogram margin) and evenness (current
+    # chord) are decoupled, an augmented or cluster chord over an established key
+    # moves the ball to the edge while the basin stays committed.
+    def harmonic_walk(stations, cycles=1):
+        chords = _seq(C_DIATONIC, 1.0)                       # establish C
+        for _ in range(cycles):
+            for key, q in stations:
+                chords.append((chord(key % 12, MAJ), 0.8))   # set the key
+                chords.append((chord((key + 7) % 12, MAJ), 0.8))
+                chords.append((chord(key % 12, q), 1.4))     # dwell on the colour
+                chords.append((chord(key % 12, q), 1.4))
+        return chords
 
-    # Walk D — home-and-back (path dependence). Settle C, leap to the tritone
-    # (F#) and dwell while home migrates there, then return to C — which now
-    # reads as displaced, parking the particle in a different basin than it
-    # started. The visual proof of "you can't go home again."
-    fsharp = [(6, MAJ), (1, MAJ), (11, MIN), (6, MAJ)]
-    home_and_back = list(intro) + fsharp * 12 + list(intro)
-    w("walk_home_and_back.mid", _seq(home_and_back, 1.5))
+    # Walk C — region tour: brass(centre) → glass(right-high) → smoke(left-high)
+    # → grit(left-low) → reed(right-low) → brass. Sharp modulation lifts y,
+    # augmented pushes x right, clusters push x left.
+    tour = [(0, MAJ), (2, AUG), (2, CLUSTER), (-2, CLUSTER), (-2, AUG), (0, MAJ)]
+    w("walk_region_tour.mid", harmonic_walk(tour))
+
+    # Walk D — harmonic loop: a six-station ring that changes one axis at a time
+    # (key OR quality), so the ball rounds the manifold in a rough circle rather
+    # than lurching across it. Runs three laps. Best heard/seen under the
+    # "Anchored" character (home held → cleaner vertical swing).
+    loop = [(2, AUG), (2, CLUSTER), (0, CLUSTER), (-2, CLUSTER), (-2, AUG), (0, AUG)]
+    w("walk_harmonic_loop.mid", harmonic_walk(loop, cycles=3))
 
     # 7. Cadence pair: same chord multiset, with/without V-I adjacency into G.
     g_section_yes = [(7, MAJ), (4, MIN), (0, MAJ), (2, DOM7),

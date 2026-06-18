@@ -45,12 +45,6 @@ class Engine:
         self.last_chord: ChordEvent | None = None
         self.last_effort = 0.0
         self._next_key_poll = 0.0
-        # Choreography (direct terrain drive): when drive_target is set, a deep
-        # well is placed there so the particle tracks a scripted path; drive_drone
-        # is sounded by the audio synth (without feeding analysis) so the timbre
-        # can be heard sweeping as the ball moves. Both bypass the harmonic input.
-        self.drive_target: tuple[float, float] | None = None
-        self.drive_drone: list[int] = []
         self._cfg = self.terrain.config(self.slew.current)
 
     # ---- input (timestamps implicit: events land at current engine time) ----
@@ -85,7 +79,7 @@ class Engine:
 
         self._set_state_targets()
         self.slew.step(dt, self.params.slew_tau)
-        self._cfg = self.terrain.config(self.slew.current, self.drive_target)
+        self._cfg = self.terrain.config(self.slew.current)
 
         tx, ty = self._cfg.target
         dx, dy = tx - self.particle.x, ty - self.particle.y
@@ -191,10 +185,7 @@ class Engine:
             "fast_hist": self.fast_hist.snapshot(),
             # Currently-sounding notes [midi, velocity01], so the (minimal,
             # browser-side) audio prototype can voice what is being analysed.
-            # Choreography drones are merged in for audio but never analysed.
-            "held": [[m, round(v, 3)] for m, v in sorted(self.tracker._held.items())]
-            + [[m, 0.8] for m in self.drive_drone],
-            "drive": list(self.drive_target) if self.drive_target else None,
+            "held": [[m, round(v, 3)] for m, v in sorted(self.tracker._held.items())],
         }
 
     # ---- manual overrides (live controls) ----

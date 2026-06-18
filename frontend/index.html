@@ -71,14 +71,6 @@
     <div id="walks"></div>
   </div>
   <div class="panel">
-    <h3>Choreography <span style="font-weight:normal;color:var(--dim)">— direct terrain drive (bypasses harmony)</span></h3>
-    <div id="choreo" style="display:flex; flex-wrap:wrap; gap:6px;">
-      <button data-choreo="circle" title="Drives the target in a big circle; the ball follows via its physics. A drone sounds so you hear the timbre sweep.">Big circle</button>
-      <button data-choreo="anchors" title="Visits every anchor region in turn — moves the ball to each landmark so you can hear how each region sounds.">Visit all regions</button>
-      <button data-choreo="corners" title="Drives to the four corners of the manifold and back to centre.">Corners</button>
-    </div>
-  </div>
-  <div class="panel">
     <h3>Test fixtures</h3>
     <div id="fixtures"></div>
     <div style="margin-top:8px; display:flex; gap:6px;">
@@ -207,8 +199,8 @@ function applyPreset(i) {
 const WALK_INFO = {
   "walk_fifths_journey.mid": ["Fifths journey", "Modulates around the circle of fifths with clear triads; displacement swings sharpward then flatward, walking the particle up and down the manifold."],
   "walk_spectral_sweep.mid": ["Spectral sweep", "Holds the key, morphs chord evenness from clusters to augmented and back; the particle tracks left↔right along the harmonic↔inharmonic axis."],
-  "walk_grand_tour.mid": ["Grand tour", "Modulates and changes chord colour together — a diagonal path visiting several anchor regions."],
-  "walk_home_and_back.mid": ["Home & back", "Leaps to the tritone and dwells while home migrates there, then returns to C — now displaced. You-can't-go-home-again."],
+  "walk_region_tour.mid": ["Region tour", "Drives the ball to specific regions using harmony alone — centre → right-high → left-high → left-low → right-low. Chord quality sets x, modulation sets y."],
+  "walk_harmonic_loop.mid": ["Harmonic loop", "A six-station harmonic ring (3 laps) that rounds the manifold in a rough circle, one axis at a time. Best under the Anchored character."],
 };
 function buildFixtures() {
   const walks = document.getElementById("walks");
@@ -244,9 +236,6 @@ function buildAnchorControls() {
 }
 document.getElementById("dropAnchor").onclick = () => send({ type: "drop_anchor" });
 document.getElementById("reset").onclick = () => { trail = []; send({ type: "reset" }); };
-document.querySelectorAll("#choreo button").forEach((b) => {
-  b.onclick = () => { trail = []; send({ type: "choreography", name: b.dataset.choreo }); };
-});
 
 // ---------- audio (minimal sonification prototype) ----------
 // Each sounding note is a 2-operator FM voice. The particle's manifold position

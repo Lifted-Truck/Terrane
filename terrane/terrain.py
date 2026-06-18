@@ -71,7 +71,7 @@ class Terrain:
         ty = 0.5 + p.disp_gain * h.displacement
         return (tx, ty)
 
-    def config(self, h: HarmonicState, drive_target: tuple[float, float] | None = None) -> TerrainConfig:
+    def config(self, h: HarmonicState) -> TerrainConfig:
         p = self.params
         # Anchors are FIXED timbral landmarks (the synthesis coordinates in
         # Phase 2) — they never move. Harmonic state instead roams a target
@@ -104,16 +104,7 @@ class Terrain:
             weights.append(-depth)
             sigmas.append((a.sigma * stretch, a.sigma / stretch))
         dominant = max(range(len(weights)), key=lambda i: -weights[i])
-        target = (tx, ty)
-        if drive_target is not None:
-            # A scripted choreography well that dominates the field, so the
-            # particle tracks the drive path through its real physics.
-            centers.append((drive_target[0], drive_target[1]))
-            weights.append(-p.drive_depth)
-            sigmas.append((p.drive_sigma, p.drive_sigma))
-            dominant = len(weights) - 1
-            target = (drive_target[0], drive_target[1])
-        return TerrainConfig(centers, weights, sigmas, target, dominant)
+        return TerrainConfig(centers, weights, sigmas, (tx, ty), dominant)
 
     @staticmethod
     def potential(cfg: TerrainConfig, x: float, y: float) -> float:
@@ -147,8 +138,6 @@ class Terrain:
         if self.params.habituation_gain == 0.0:
             return
         i = cfg.dominant_index
-        if i >= len(self.habit):
-            return  # the dominant well is a transient drive target, not an anchor
         cx, cy = cfg.centers[i]
         if (x - cx) ** 2 + (y - cy) ** 2 < cfg.sigmas[i][0] ** 2:
             self.habit[i] = min(self.habit[i] + 0.01 * dt, 1.0)

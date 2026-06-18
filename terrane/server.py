@@ -8,7 +8,6 @@ import asyncio
 import functools
 import http.server
 import json
-import math
 import os
 import threading
 
@@ -30,7 +29,6 @@ class Server:
         self.engine = Engine(Params())
         self.clients: set = set()
         self.fixture_task: asyncio.Task | None = None
-        self.choreo_task: asyncio.Task | None = None
 
     async def physics_loop(self) -> None:
         loop = asyncio.get_running_loop()
@@ -76,55 +74,10 @@ class Server:
             else:
                 self.engine.note_off(e.midi)
 
-    def _anchor_tour_order(self) -> list[tuple[float, float]]:
-        """Anchor positions ordered by angle around centre, for a non-crossing tour."""
-        pts = [(a.x, a.y) for a in self.engine.terrain.anchors]
-        return sorted(pts, key=lambda p: math.atan2(p[1] - 0.5, p[0] - 0.5))
-
-    async def run_choreography(self, name: str) -> None:
-        """Directly drive the terrain target along a scripted path. The particle
-        follows through its real physics; a drone is sounded so the timbre sweep
-        is audible. Bypasses harmonic input entirely (a demonstration mode)."""
-        e = self.engine
-        loop = asyncio.get_running_loop()
-        e.drive_drone = [45, 52]  # a low fifth, for audio only
-        step = 1.0 / 60.0
-        try:
-            if name == "circle":
-                cx, cy, r, period, loops = 0.5, 0.5, 0.33, 16.0, 2.5
-                start = loop.time()
-                while loop.time() - start < period * loops:
-                    ph = (loop.time() - start) / period * 2 * math.pi
-                    e.drive_target = (cx + r * math.cos(ph), cy + r * math.sin(ph))
-                    await asyncio.sleep(step)
-            else:
-                if name == "corners":
-                    waypoints = [(0.16, 0.16), (0.84, 0.16), (0.84, 0.84), (0.16, 0.84), (0.5, 0.5)]
-                else:  # "anchors": visit every region in turn
-                    waypoints = self._anchor_tour_order()
-                cur = e.drive_target or (0.5, 0.5)
-                for wx, wy in waypoints:
-                    move, dwell, t0 = 1.4, 1.6, loop.time()
-                    while loop.time() - t0 < move:  # ease the target over to the waypoint
-                        u = (loop.time() - t0) / move
-                        u = u * u * (3 - 2 * u)  # smoothstep
-                        e.drive_target = (cur[0] + (wx - cur[0]) * u, cur[1] + (wy - cur[1]) * u)
-                        await asyncio.sleep(step)
-                    e.drive_target = (wx, wy)
-                    cur = (wx, wy)
-                    await asyncio.sleep(dwell)
-        finally:
-            e.drive_target = None
-            e.drive_drone = []
-
     def _stop_playback(self) -> None:
-        for task in ("fixture_task", "choreo_task"):
-            t = getattr(self, task)
-            if t:
-                t.cancel()
-                setattr(self, task, None)
-        self.engine.drive_target = None
-        self.engine.drive_drone = []
+        if self.fixture_task:
+            self.fixture_task.cancel()
+            self.fixture_task = None
 
     def dispatch(self, msg: dict) -> None:
         kind = msg.get("type")
@@ -148,11 +101,6 @@ class Server:
             self._stop_playback()
             self.fixture_task = asyncio.get_running_loop().create_task(
                 self.play_fixture(msg["name"])
-            )
-        elif kind == "choreography":
-            self._stop_playback()
-            self.choreo_task = asyncio.get_running_loop().create_task(
-                self.run_choreography(msg["name"])
             )
 
     async def handler(self, ws) -> None:

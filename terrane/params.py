@@ -22,8 +22,6 @@ class Params:
     disp_gain: float = 0.06          # target-point travel up the y axis per fifth of displacement
     mode_asym: float = 0.15          # sigma asymmetry for cross-mode relationship (sketch level)
     wall_k: float = 60.0             # soft-wall stiffness outside [0,1]^2
-    drive_depth: float = 1.8         # well depth of a choreography drive target
-    drive_sigma: float = 0.15        # well width of a choreography drive target
 
     # --- home ---
     rootedness: float = 0.7          # 0 = home chases local key, 1 = home fixed
